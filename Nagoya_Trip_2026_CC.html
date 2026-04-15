@@ -61,7 +61,10 @@
 
     <div class="top-bar px-4 py-3 flex justify-between items-center sticky top-0 z-50 shadow-md gap-1">
         <span class="font-bold text-sm tracking-widest uppercase truncate mr-auto">Nagoya Trip</span>
-        <div class="flex gap-2">
+        <div class="flex gap-1.5">
+            <button onclick="refreshData()" class="bg-indigo-500 border border-indigo-400 text-white px-2 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition shadow-sm flex items-center">
+                <i class="fas fa-sync-alt mr-1"></i>重整
+            </button>
             <button onclick="saveToGoogleSheets()" class="relative bg-blue-600 border border-blue-400 text-white px-2 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition shadow-sm flex items-center">
                 <i class="fas fa-cloud-upload-alt mr-1"></i>存雲端
                 <span id="unsavedDot" class="hidden absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5">
@@ -146,7 +149,9 @@
                 <div class="text-sm text-blue-600 space-y-2">
                     <p>📝 <strong>編輯模式：</strong>點擊右上角「開啟編輯」按鈕</p>
                     <p>✏️ <strong>直接編輯：</strong>編輯模式下點擊任何文字即可修改</p>
-                    <p>👥 <strong>儲存：</strong>儲存到GOOGLE試算表</p>
+                    <p>👥 <strong>儲存：</strong>點擊右上角「存雲端」寫入 GOOGLE 試算表
+                        <a href="https://docs.google.com/spreadsheets/d/1Iqis5KA0yxV6WIz6kTDAI1-GBUHirebzzM54_s1Ppqk/edit?gid=0#gid=0" target="_blank" class="block ml-6 mt-1 text-blue-500 hover:text-blue-700 underline text-xs break-all"><i class="fas fa-external-link-alt mr-1"></i>查看後台試算表</a>
+                    </p>
                     <p>💾 <strong>分享：</strong>完成後點擊「匯出HTML」按鈕</p>
                 </div>
             </div>
@@ -220,10 +225,11 @@
     <div id="addModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center z-[100] px-4 backdrop-blur-sm hidden">
         <div class="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl">
             <div class="bg-blue-600 px-5 py-4 flex justify-between items-center text-white">
-                <h3 class="font-bold">新增行程項目</h3>
+                <h3 class="font-bold" id="modal-title-text">新增行程項目</h3>
                 <button onclick="closeModal()" class="text-white opacity-80 hover:opacity-100"><i class="fas fa-times text-lg"></i></button>
             </div>
             <div class="p-5 space-y-4">
+                <input type="hidden" id="modal-edit-idx" value="">
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-widest">類型</label>
@@ -367,6 +373,39 @@
                 loadText.textContent = "載入資料中..."; 
             }, 300);
             return true;
+        }
+
+        // 強制從雲端重整資料
+        async function refreshData() {
+            if(!document.getElementById('unsavedDot').classList.contains('hidden')) {
+                if(!confirm("您有未儲存的變更，確定要放棄這些變更並從雲端重整嗎？")) return;
+            }
+            
+            const overlay = document.getElementById('loadingOverlay');
+            const loadText = document.getElementById('loadingText');
+            overlay.style.display = 'flex';
+            setTimeout(() => overlay.style.opacity = '1', 10);
+            loadText.textContent = "從雲端下載最新資料...";
+            
+            const success = await loadFromGoogleSheets();
+            if(success) {
+                // 若成功載入雲端資料，清空本地暫存以確保顯示最新狀態
+                localStorage.removeItem('nagoya_itinerary');
+                localStorage.removeItem('nagoya_checklist');
+                localStorage.removeItem('nagoya_accounting');
+                document.getElementById('unsavedDot').classList.add('hidden');
+                showNotification('已從雲端同步最新資料！');
+            } else {
+                showNotification('重整失敗，請檢查網路狀態或稍後再試！');
+            }
+            
+            overlay.style.opacity = '0';
+            setTimeout(() => { 
+                overlay.style.display = 'none';
+                loadText.textContent = "載入資料中..."; 
+            }, 300);
+            
+            showTab(currentDay); // 重新渲染當前畫面
         }
 
         // 載入資料
@@ -557,7 +596,10 @@
                         </div>
                         <div class="flex items-center text-slate-400 text-[11px] mt-1 font-bold">
                             <i class="far fa-clock mr-1"></i> ${formatTime(item.time)}
-                            <button onclick="deleteItem('${dayId}', ${idx})" class="ml-auto text-slate-300 hover:text-red-500"><i class="fas fa-trash"></i></button>
+                            <div class="ml-auto flex gap-3 text-sm">
+                                <button onclick="editItem('${dayId}', ${idx})" class="text-blue-400 hover:text-blue-600"><i class="fas fa-edit"></i></button>
+                                <button onclick="deleteItem('${dayId}', ${idx})" class="text-slate-300 hover:text-red-500"><i class="fas fa-trash"></i></button>
+                            </div>
                         </div>
                         ${item.desc ? `<div class="text-[13px] text-slate-600 mt-2.5 bg-slate-50 p-3 rounded-xl border border-slate-100 whitespace-pre-wrap leading-relaxed">${item.desc}</div>` : ''}
                     </div>
@@ -604,21 +646,39 @@
             document.getElementById('modal-title').value = '';
             document.getElementById('modal-desc').value = '';
             document.getElementById('modal-time').value = '12:00';
+            document.getElementById('modal-edit-idx').value = '';
+            document.getElementById('modal-title-text').innerText = '新增行程項目';
+            document.getElementById('addModal').classList.remove('hidden');
+        }
+        function editItem(dayId, idx) {
+            const item = itinerary[dayId][idx];
+            document.getElementById('modal-type').value = item.type;
+            document.getElementById('modal-title').value = item.title;
+            document.getElementById('modal-desc').value = item.desc || '';
+            document.getElementById('modal-time').value = item.time;
+            document.getElementById('modal-edit-idx').value = idx;
+            document.getElementById('modal-title-text').innerText = '編輯行程項目';
             document.getElementById('addModal').classList.remove('hidden');
         }
         function closeModal() { document.getElementById('addModal').classList.add('hidden'); }
         function saveItem() {
-            const newItem = {
-                type: document.getElementById('modal-type').value,
-                title: document.getElementById('modal-title').value || 'New Activity',
-                time: document.getElementById('modal-time').value,
-                desc: document.getElementById('modal-desc').value
-            };
-            itinerary[currentDay].push(newItem);
+            const type = document.getElementById('modal-type').value;
+            const title = document.getElementById('modal-title').value || 'New Activity';
+            const time = document.getElementById('modal-time').value || '12:00';
+            const desc = document.getElementById('modal-desc').value;
+            const editIdx = document.getElementById('modal-edit-idx').value;
+
+            if (editIdx !== '') {
+                itinerary[currentDay][editIdx] = { type, title, time, desc };
+                document.getElementById('modal-edit-idx').value = '';
+            } else {
+                itinerary[currentDay].push({ type, title, time, desc });
+            }
+            
             saveStorage();
             renderDay(currentDay);
             closeModal();
-            showNotification('新增行程成功！記得點選右上角存雲端喔！');
+            showNotification(editIdx !== '' ? '行程修改成功！記得存雲端喔！' : '新增行程成功！記得點選右上角存雲端喔！');
         }
         function deleteItem(dayId, idx) {
             if(confirm("確定要移除這個行程點嗎？")) {
