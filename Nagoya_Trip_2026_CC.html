@@ -62,8 +62,12 @@
     <div class="top-bar px-4 py-3 flex justify-between items-center sticky top-0 z-50 shadow-md gap-1">
         <span class="font-bold text-sm tracking-widest uppercase truncate mr-auto">Nagoya Trip</span>
         <div class="flex gap-2">
-            <button onclick="saveToGoogleSheets()" class="bg-blue-600 border border-blue-400 text-white px-2 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition shadow-sm flex items-center">
+            <button onclick="saveToGoogleSheets()" class="relative bg-blue-600 border border-blue-400 text-white px-2 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition shadow-sm flex items-center">
                 <i class="fas fa-cloud-upload-alt mr-1"></i>存雲端
+                <span id="unsavedDot" class="hidden absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border-2 border-white"></span>
+                </span>
             </button>
             <button onclick="toggleEditMode()" class="bg-green-500 border border-green-400 text-white px-2 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition shadow-sm flex items-center">
                 <i class="fas fa-edit mr-1"></i><span id="editModeText">編輯</span>
@@ -73,25 +77,25 @@
 
     <div class="bg-slate-50 px-4 py-5 border-b flex space-x-3 overflow-x-auto no-scrollbar">
         <div class="date-card active" id="btn-pre" onclick="showTab('pre')">
-            <span class="font-black text-[10px] mb-1">PRE</span><span class="day-num"><i class="fas fa-tasks"></i></span><span>行前準備</span>
+            <span class="text-[10px] text-slate-500 font-bold mb-0.5">PRE</span><span class="day-num"><i class="fas fa-tasks"></i></span><span class="text-[10px] text-slate-500">行前</span>
         </div>
         <div class="date-card" id="btn-d1" onclick="showTab('d1')">
-            <span>Thu</span><span class="day-num">30</span><span>Apr</span>
+            <span class="text-[10px] text-slate-500 font-bold mb-0.5">第1天</span><span class="text-[15px] font-black my-0.5">4/30</span><span class="text-[10px] text-slate-500">週四</span>
         </div>
         <div class="date-card" id="btn-d2" onclick="showTab('d2')">
-            <span>Fri</span><span class="day-num">1</span><span>May</span>
+            <span class="text-[10px] text-slate-500 font-bold mb-0.5">第2天</span><span class="text-[15px] font-black my-0.5">5/1</span><span class="text-[10px] text-slate-500">週五</span>
         </div>
         <div class="date-card" id="btn-d3" onclick="showTab('d3')">
-            <span>Sat</span><span class="day-num">2</span><span>May</span>
+            <span class="text-[10px] text-slate-500 font-bold mb-0.5">第3天</span><span class="text-[15px] font-black my-0.5">5/2</span><span class="text-[10px] text-slate-500">週六</span>
         </div>
         <div class="date-card" id="btn-d4" onclick="showTab('d4')">
-            <span>Sun</span><span class="day-num">3</span><span>May</span>
+            <span class="text-[10px] text-slate-500 font-bold mb-0.5">第4天</span><span class="text-[15px] font-black my-0.5">5/3</span><span class="text-[10px] text-slate-500">週日</span>
         </div>
         <div class="date-card" id="btn-d5" onclick="showTab('d5')">
-            <span>Mon</span><span class="day-num">4</span><span>May</span>
+            <span class="text-[10px] text-slate-500 font-bold mb-0.5">第5天</span><span class="text-[15px] font-black my-0.5">5/4</span><span class="text-[10px] text-slate-500">週一</span>
         </div>
         <div class="date-card" id="btn-acc" onclick="showTab('acc')">
-            <span class="font-black text-[10px] mb-1">ACC</span><span class="day-num"><i class="fas fa-yen-sign"></i></span><span>記帳</span>
+            <span class="text-[10px] text-slate-500 font-bold mb-0.5">ACC</span><span class="day-num"><i class="fas fa-yen-sign"></i></span><span class="text-[10px] text-slate-500">記帳</span>
         </div>
     </div>
 
@@ -351,6 +355,7 @@
                 });
                 
                 await new Promise(r => setTimeout(r, 800)); // 增加儲存體感時間
+                document.getElementById('unsavedDot').classList.add('hidden');
                 showNotification('資料已儲存到Google試算表！');
             } catch (error) {
                 showNotification('Google試算表儲存失敗: ' + error.message);
@@ -457,6 +462,7 @@
             localStorage.setItem('nagoya_itinerary', JSON.stringify(itinerary));
             localStorage.setItem('nagoya_checklist', JSON.stringify(checklistData));
             localStorage.setItem('nagoya_accounting', JSON.stringify(accountingData));
+            document.getElementById('unsavedDot').classList.remove('hidden');
         }
 
         function timeToMins(t) { if(!t) return 0; const [h, m] = t.split(':').map(Number); return h * 60 + m; }
@@ -527,7 +533,7 @@
             });
             
             saveStorage();
-            showNotification('編輯已儲存到JSON資料！');
+            showNotification('行程編輯成功！記得右上角存雲端喔！');
         }
 
         function renderDay(dayId) {
@@ -612,12 +618,14 @@
             saveStorage();
             renderDay(currentDay);
             closeModal();
+            showNotification('新增行程成功！記得點選右上角存雲端喔！');
         }
         function deleteItem(dayId, idx) {
             if(confirm("確定要移除這個行程點嗎？")) {
                 itinerary[dayId].splice(idx, 1);
                 saveStorage();
                 renderDay(dayId);
+                showNotification('已刪除！記得點選右上角存雲端喔！');
             }
         }
 
@@ -677,6 +685,7 @@
             accountingData.splice(idx, 1); 
             saveStorage(); 
             renderAccounting(); 
+            showNotification('帳目已刪除！記得儲存到雲端！');
         }
         
         function calcT_acc() { const j = document.getElementById('accJpyV').value; document.getElementById('accTwdV').value = Math.round(j * 0.21); }
@@ -697,10 +706,10 @@
         }
         function addChecklist() {
             const val = document.getElementById('newChecklist').value;
-            if(val.trim()) { checklistData.push({ text: val, checked: false }); document.getElementById('newChecklist').value = ''; saveStorage(); renderChecklist(); }
+            if(val.trim()) { checklistData.push({ text: val, checked: false }); document.getElementById('newChecklist').value = ''; saveStorage(); renderChecklist(); showNotification('清單新增成功！記得儲存到雲端喔！'); }
         }
-        function delChecklist(idx) { checklistData.splice(idx, 1); saveStorage(); renderChecklist(); }
-        function toggleCheck(idx) { checklistData[idx].checked = !checklistData[idx].checked; saveStorage(); renderChecklist(); }
+        function delChecklist(idx) { checklistData.splice(idx, 1); saveStorage(); renderChecklist(); showNotification('清單已刪除！記得儲存到雲端喔！'); }
+        function toggleCheck(idx) { checklistData[idx].checked = !checklistData[idx].checked; saveStorage(); renderChecklist(); showNotification('狀態已更新！記得儲存到雲端喔！'); }
 
         // Currency Math
         function calcT() { const j = document.getElementById('jpyV').value; document.getElementById('twdV').value = Math.round(j * 0.21); }
