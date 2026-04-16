@@ -297,8 +297,8 @@
             }
             
             try {
-                // 使用GET請求載入資料
-                const loadUrl = GOOGLE_APPS_SCRIPT_URL + '?action=load&callback=handleGoogleSheetsResponse';
+                // 使用GET請求載入資料，加入時間戳記防止瀏覽器快取舊資料
+                const loadUrl = GOOGLE_APPS_SCRIPT_URL + '?action=load&callback=handleGoogleSheetsResponse&t=' + new Date().getTime();
                 
                 // 創建script標籤來避免CORS問題
                 return new Promise((resolve) => {
@@ -430,10 +430,15 @@
                     console.log('載入外部JSON失敗，使用預設資料');
                     loadDefaultData();
                 }
+                
+                // 只有在雲端載入失敗時，才載入本地暫存的修改 (避免舊暫存蓋掉新的雲端資料)
+                loadStorage();
+            } else {
+                // 如果雲端載入成功，代表雲端是最新版本，此時清空本地舊的暫存
+                localStorage.removeItem('nagoya_itinerary');
+                localStorage.removeItem('nagoya_checklist');
+                localStorage.removeItem('nagoya_accounting');
             }
-            
-            // 載入本地儲存的修改
-            loadStorage();
         }
 
         function loadDefaultData() {
