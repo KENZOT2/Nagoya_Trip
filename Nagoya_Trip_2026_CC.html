@@ -60,13 +60,16 @@
     </div>
 
     <div class="top-bar px-4 py-3 flex justify-between items-center sticky top-0 z-50 shadow-md gap-1">
-        <span class="font-bold text-sm tracking-widest uppercase truncate mr-auto">Nagoya Trip</span>
+        <div class="flex flex-col items-start mr-auto truncate">
+            <span class="font-bold text-sm tracking-widest uppercase truncate">Nagoya Trip</span>
+            <span id="lastSyncTime" class="text-[10px] opacity-80 font-medium tracking-tight">雲端確認中...</span>
+        </div>
         <div class="flex gap-1.5">
             <button onclick="refreshData()" class="bg-indigo-500 border border-indigo-400 text-white px-2 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition shadow-sm flex items-center">
                 <i class="fas fa-sync-alt mr-1"></i>重整
             </button>
             <button onclick="saveToGoogleSheets()" class="relative bg-blue-600 border border-blue-400 text-white px-2 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition shadow-sm flex items-center">
-                <i class="fas fa-cloud-upload-alt mr-1"></i>存雲端
+                <i class="fas fa-cloud-upload-alt mr-1"></i><span id="saveBtnText">存雲端</span>
                 <span id="unsavedDot" class="hidden absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 border-2 border-white"></span>
@@ -284,6 +287,7 @@
         let accountingData = [];
         let editMode = false;
         let googleSheetsEnabled = false;
+        let autoSaveTimer = null;
         const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyakqgwA4BUhl3uflYSOQU1dSERuNlUQuzKtIYPblJMQPkAOSMv-XrOQtL0QkKmvwabcA/exec'; // Google Apps Script URL
 
         // --- 3. Core Functions ---
@@ -308,6 +312,14 @@
                             checklistData = data.data.checklistData;
                             accountingData = data.data.accountingData || [];
                             googleSheetsEnabled = true;
+                            
+                            // 從雲端資料讀取最後更新時間
+                            if (data.data.lastUpdated) {
+                                updateSyncTimeDisplay(data.data.lastUpdated);
+                            } else {
+                                updateSyncTimeDisplay(); // 預設為現在
+                            }
+                            
                             showNotification('已從Google試算表載入資料！');
                             resolve(true);
                         } else {
@@ -335,7 +347,7 @@
             }
         }
 
-        async function saveToGoogleSheets() {
+        async function saveToGoogleSheets(isAutoSave = false) {
             if (!GOOGLE_APPS_SCRIPT_URL) {
                 showNotification('Google Sheets URL未設定');
                 return false;
@@ -343,16 +355,41 @@
             
             const overlay = document.getElementById('loadingOverlay');
             const loadText = document.getElementById('loadingText');
-            loadText.textContent = "儲存至雲端中...";
-            overlay.style.display = 'flex';
-            overlay.offsetHeight; // 強制重繪
-            overlay.style.opacity = '1';
+            
+            if (!isAutoSave) {
+                loadText.textContent = "儲存至雲端中...";
+                overlay.style.display = 'flex';
+                overlay.style.opacity = '1';
+            } else {
+                // 自動存檔時在按鈕上顯示微小提示或改變顏色
+                const saveBtn = document.querySelector('button[onclick="saveToGoogleSheets()"]');
+                const saveText = document.getElementById('saveBtnText');
+                saveBtn.classList.add('animate-pulse');
+                if (saveText) saveText.innerText = '自動存檔...';
+            }
             
             try {
+                // 產生目前的時間戳記 (符合使用者要求的格式)
+                const now = new Date();
+                const timeStr = now.toLocaleString('zh-TW', { 
+                    year: 'numeric', 
+                    month: 'numeric', 
+                    day: 'numeric', 
+                    hour: 'numeric', 
+                    minute: 'numeric', 
+                    second: 'numeric',
+                    hour12: true 
+                });
+
                 // 使用表單提交方式避免CORS問題
                 const formData = new FormData();
                 formData.append('action', 'save');
-                formData.append('data', JSON.stringify({ itinerary, checklistData, accountingData }));
+                formData.append('data', JSON.stringify({ 
+                    itinerary, 
+                    checklistData, 
+                    accountingData,
+                    lastUpdated: timeStr // 將時間戳記一起存入雲端
+                }));
                 
                 const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
                     method: 'POST',
@@ -360,19 +397,56 @@
                     mode: 'no-cors'
                 });
                 
-                await new Promise(r => setTimeout(r, 800)); // 增加儲存體感時間
+                if (!isAutoSave) await new Promise(r => setTimeout(r, 800)); // 增加儲存體感時間
+                
                 document.getElementById('unsavedDot').classList.add('hidden');
-                showNotification('資料已儲存到Google試算表！');
+                updateSyncTimeDisplay(timeStr);
+                
+                if (!isAutoSave) {
+                    showNotification('資料已儲存到Google試算表！');
+                } else {
+                    const saveBtn = document.querySelector('button[onclick="saveToGoogleSheets()"]');
+                    const saveText = document.getElementById('saveBtnText');
+                    saveBtn.classList.remove('animate-pulse');
+                    if (saveText) saveText.innerText = '存雲端';
+                }
             } catch (error) {
-                showNotification('Google試算表儲存失敗: ' + error.message);
+                if (!isAutoSave) showNotification('Google試算表儲存失敗: ' + error.message);
+                console.error('Save failed:', error);
             }
             
-            overlay.style.opacity = '0';
-            setTimeout(() => { 
-                overlay.style.display = 'none'; 
-                loadText.textContent = "載入資料中..."; 
-            }, 300);
+            if (!isAutoSave) {
+                overlay.style.opacity = '0';
+                setTimeout(() => { 
+                    overlay.style.display = 'none'; 
+                    loadText.textContent = "載入資料中..."; 
+                }, 300);
+            }
             return true;
+        }
+
+        function updateSyncTimeDisplay(timeStr) {
+            if (!timeStr) {
+                const now = new Date();
+                timeStr = now.toLocaleString('zh-TW', { 
+                    year: 'numeric', 
+                    month: 'numeric', 
+                    day: 'numeric', 
+                    hour: 'numeric', 
+                    minute: 'numeric', 
+                    second: 'numeric',
+                    hour12: true 
+                });
+            }
+            
+            // 依然存入 localStorage 是為了斷網時參考，但 UI 優先權交給雲端
+            localStorage.setItem('nagoya_last_sync', timeStr);
+            const displayEl = document.getElementById('lastSyncTime');
+            if (displayEl) {
+                displayEl.innerText = '雲端同步：' + timeStr;
+                displayEl.classList.add('text-green-400');
+                setTimeout(() => displayEl.classList.remove('text-green-400'), 2000);
+            }
         }
 
         // 強制從雲端重整資料
@@ -507,6 +581,12 @@
             localStorage.setItem('nagoya_checklist', JSON.stringify(checklistData));
             localStorage.setItem('nagoya_accounting', JSON.stringify(accountingData));
             document.getElementById('unsavedDot').classList.remove('hidden');
+            
+            // 觸發 3 秒自動存檔
+            if (autoSaveTimer) clearTimeout(autoSaveTimer);
+            autoSaveTimer = setTimeout(() => {
+                saveToGoogleSheets(true);
+            }, 3000);
         }
 
         function timeToMins(t) { if(!t) return 0; const [h, m] = t.split(':').map(Number); return h * 60 + m; }
@@ -834,6 +914,10 @@
         window.onload = async function() {
             const startTime = Date.now();
             await loadData();
+            
+            // 初始化時不顯示本地快取時間，待雲端載入成功後由 updateSyncTimeDisplay 更新
+            // 以確保顯示的是真正的雲端同步時間而非本機暫存時間
+            
             renderChecklist();
             showTab('pre');
             
